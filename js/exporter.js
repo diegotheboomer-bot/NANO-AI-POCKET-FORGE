@@ -91,7 +91,7 @@ function nearest(input) {
 async function run(input, onStatus) {
   if (generator === null) generator = (await loadModel(onStatus)) || false;
   if (!generator) return nearest(input);
-  const out = await generator(buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input), { max_new_tokens: 256, do_sample: false });
+  const out = await generator(buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input), { max_new_tokens: 160, do_sample: false });
   return out[0].generated_text.at(-1).content.trim();
 }
 

@@ -211,7 +211,7 @@ PF.Engine = (() => {
 
   async function generateReal(cfg, input, modelId) {
     const t0 = performance.now();
-    const gen = () => pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 256, do_sample: false });
+    const gen = () => pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 160, do_sample: false });
     let out;
     try { out = await gen(); }
     catch (e) {

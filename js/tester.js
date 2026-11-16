@@ -9,7 +9,10 @@
 window.PF = window.PF || {};
 
 PF.Tester = (() => {
-  const PASS = 0.75, MAX_LOO = 6;
+  const PASS = 0.75;
+  // Real models are slow: check fewer leave-one-out cases than the instant simulator.
+  const maxLoo = state => (state.backend === 'real' ? 4 : 6);
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));   // let the UI repaint between cases
   const norm = v => (v == null ? 'null' : String(v)).trim().toLowerCase();
 
   /** Models sometimes wrap JSON in ``` fences or prose; pull out the first {...}. */
@@ -40,7 +43,7 @@ PF.Tester = (() => {
    */
   async function run(state, onProgress = () => {}) {
     const held = (state.tests || []).map(t => ({ kind: 'held-out', input: t.input, expected: t.expected, ctx: state }));
-    const loo = state.examples.slice(-MAX_LOO).map(e => ({
+    const loo = state.examples.slice(-maxLoo(state)).map(e => ({
       kind: 'example', input: e.input, expected: e.output,
       ctx: { ...state, examples: state.examples.filter(x => x !== e) },
     }));
@@ -51,6 +54,7 @@ PF.Tester = (() => {
       const s = score(c.expected, got);
       out.push({ kind: c.kind, input: c.input, expected: c.expected, got, score: s, pass: s >= PASS });
       onProgress(i + 1, cases.length);
+      await nextFrame();
     }
     const total = out.length, passed = out.filter(c => c.pass).length;
     return { at: Date.now(), total, passed, score: total ? out.reduce((a, c) => a + c.score, 0) / total : null, cases: out };
