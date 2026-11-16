@@ -94,7 +94,11 @@ async function run(input, onStatus) {
   const msgs = buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input);
   if (CONFIG.noThink) msgs[msgs.length - 1].content += ' /no_think';   // Qwen3: skip the reasoning phase
   const out = await generator(msgs, { max_new_tokens: 160, do_sample: false });
-  return out[0].generated_text.at(-1).content.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
+  let text = out[0].generated_text.at(-1).content;
+  const end = text.lastIndexOf('</think>');             // Qwen3: drop the reasoning block (string ops, no regex)
+  if (end >= 0) text = text.slice(end + 8);
+  if (text.indexOf('<think>') >= 0) text = text.slice(0, text.indexOf('<think>'));
+  return text.trim();
 }
 
 // ── 4. Minimal UI (style freely) ──
