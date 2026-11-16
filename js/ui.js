@@ -360,6 +360,7 @@
     if (document.activeElement !== tEl('t-model')) tEl('t-model').value = t.model;
     if (document.activeElement !== tEl('t-base')) tEl('t-base').value = t.base;
     tEl('t-remember').checked = t.remember;
+    tEl('t-dest').textContent = t.provider === 'anthropic' ? 'Requests go to: api.anthropic.com' : t.provider === 'cli' ? `Requests go to: your local bridge (${t.bridge})` : `Requests go to: ${(t.base.match(/\/\/([^/]+)/) || [])[1] || t.base}`;
     tEl('t-key').placeholder = t.hasKey ? '•••••••• (saved for this session)' : (t.provider === 'cli' ? 'token printed by the bridge' : t.provider === 'anthropic' ? 'sk-ant-…' : 'sk-… (optional for localhost)');
     const ok = Teacher.ready();
     tEl('t-gen').disabled = !ok || !s.forged; tEl('t-diag').disabled = !ok || !s.forged; tEl('t-forget').disabled = !t.hasKey;
@@ -368,6 +369,17 @@
     const b = e.target.closest('button'); if (!b) return;
     const anth = b.dataset.prov === 'anthropic';
     Teacher.save(b.dataset.prov === 'cli' ? { provider: 'cli' } : { provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
+  });
+  // One-click presets for OpenAI-compatible providers (model names change over time: edit if you get "model not found")
+  const PRESETS = {
+    gemini: { base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
+    openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    openrouter: { base: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+    ollama: { base: 'http://localhost:11434/v1', model: 'llama3.2' },
+  };
+  $('#t-presets').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    Teacher.save({ provider: 'openai', ...PRESETS[b.dataset.preset] }); renderTeacher();
   });
   function saveTeacherForm() {
     Teacher.save({ tool: tEl('t-tool').value, bridge: tEl('t-bridge').value.trim() || 'http://127.0.0.1:8787', model: tEl('t-model').value.trim() || Teacher.get().model, base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
