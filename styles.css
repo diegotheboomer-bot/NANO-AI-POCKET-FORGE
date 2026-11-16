@@ -23,7 +23,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 /* ── Ambient background ───────────────────────────────────────────────── */
 .ambient{position:fixed;inset:0;z-index:-1;overflow:hidden;
   background:radial-gradient(120% 90% at 50% -10%,#18181b 0%,#0a0a0b 55%,#020203 100%)}
-.ambient i{position:absolute;border-radius:50%;filter:blur(110px);opacity:.22;animation:drift 28s ease-in-out infinite alternate}
+.ambient i{position:absolute;border-radius:50%;filter:blur(70px);opacity:.22;will-change:transform;animation:drift 28s ease-in-out infinite alternate}
 .ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-10vmax;background:#8c8c94}
 .ambient i:nth-child(2){width:38vmax;height:38vmax;right:-10vmax;top:8vmax;background:#5c5c64;animation-delay:-8s}
 .ambient i:nth-child(3){width:34vmax;height:34vmax;left:22vw;bottom:-16vmax;background:#b4b4bc;animation-delay:-15s;opacity:.38}
@@ -34,7 +34,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .glass{
   position:relative;border:1px solid var(--stroke);border-radius:var(--r);
   background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.012));
-  -webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);
+  -webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);
   box-shadow:0 24px 60px -24px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.24),inset 0 0 0 1px rgba(255,255,255,.025);
 }
 .glass::before{ /* soft specular highlight on the top-left edge */
@@ -210,3 +210,6 @@ textarea:focus{border-color:rgba(255,255,255,0.315);box-shadow:0 0 0 4px rgba(25
 .steps li.active .dot::after{background:#17171a}
 
 .card-head .btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+/* While the model is generating, stop animating the blurred background so the GPU/CPU goes to inference */
+body.busy .ambient i{animation-play-state:paused}

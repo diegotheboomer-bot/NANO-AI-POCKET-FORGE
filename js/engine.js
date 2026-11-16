@@ -226,11 +226,18 @@ PF.Engine = (() => {
     return { text, meta: `${pipe.pfDevice} · ${cfg.examples.length} examples in context · ${Math.round(performance.now() - t0)} ms` };
   }
 
+  // Marks <body> as busy while any generation is in flight (CSS pauses decorative animation).
+  let busyCount = 0;
+  const busy = d => { busyCount += d; document.body.classList.toggle('busy', busyCount > 0); };
+
   /* ── Public API ───────────────────────────────────────────────────────── */
   /** @param {object} state PF.Store state  @param {{base?:boolean}} opts base=true ignores all training */
   async function run(state, input, opts = {}) {
     const cfg = { task: state.task, rules: opts.base ? [] : state.rules, examples: opts.base ? [] : state.examples };
-    return state.backend === 'real' && isRealLoaded(state.modelId) ? serial(() => generateReal(cfg, input, state.modelId)) : simulate(cfg, input);
+    const real = state.backend === 'real' && isRealLoaded(state.modelId);
+    busy(1);
+    try { return await (real ? serial(() => generateReal(cfg, input, state.modelId)) : simulate(cfg, input)); }
+    finally { busy(-1); }
   }
 
   return { run, detect, loadReal, isRealLoaded, suggestInputs, detectMode, buildMessages };
