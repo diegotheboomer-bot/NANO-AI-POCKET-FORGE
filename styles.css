@@ -237,3 +237,8 @@ body.busy .ambient i{animation-play-state:paused}
 .list.props b{font-weight:500;color:#fff;margin-right:6px;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
 .list.props input{accent-color:#fff;margin-top:3px}
 .fb small{align-self:center;color:var(--faint);font-size:.72rem}
+
+#t-provider{grid-template-columns:repeat(3,1fr)}
+#t-provider button{padding:10px 6px;font-size:.82rem}
+select{width:100%;padding:12px 14px;border-radius:16px;border:1px solid var(--stroke);background:var(--field);color:var(--text);font:inherit;outline:none}
+select option{background:#111113;color:#f4f4f6}

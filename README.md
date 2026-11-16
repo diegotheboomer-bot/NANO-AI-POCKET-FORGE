@@ -21,3 +21,9 @@ Opening `index.html` directly also works, but WebGPU needs a secure context (`lo
 
 ## AI Teacher (optional)
 Expand & Fine-Tune → AI Teacher. Paste an API key for Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama/LM Studio on localhost). It can generate training data + held-out tests, diagnose failing tests, and judge single replies. Off by default. Using it sends your task, rules, examples and queried inputs to that provider. The key stays in sessionStorage unless "remember" is ticked and is never exported. Verified against a mocked API only.
+
+### Use your Claude Code / Codex login (no API key)
+```bash
+node bridge/bridge.js        # prints a token; leave it running
+```
+In the AI Teacher card choose **Local CLI**, paste the token, click Save & test. The bridge listens on 127.0.0.1 only, requires the token and a localhost page origin, runs a fixed command (`claude -p` / `codex exec -`) and sends the prompt over stdin. The page must be served from `http://localhost:3000` or `:8080` (or set `PF_ORIGIN`). Claude path tested end to end; Codex path is untested.

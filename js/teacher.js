@@ -14,14 +14,14 @@ window.PF = window.PF || {};
 
 PF.Teacher = (() => {
   const CFG_KEY = 'pocketforge.teacher', KEY_KEY = 'pf.teacherKey';
-  const defaults = { provider: 'anthropic', model: 'claude-sonnet-5-5', base: 'https://api.openai.com/v1', remember: false };
+  const defaults = { provider: 'anthropic', model: 'claude-sonnet-5-5', base: 'https://api.openai.com/v1', remember: false, tool: 'claude', bridge: 'http://127.0.0.1:8787' };
 
   const safe = fn => { try { return fn(); } catch { return undefined; } };
   let cfg = { ...defaults, ...(safe(() => JSON.parse(localStorage.getItem(CFG_KEY) || '{}')) || {}) };
   let key = safe(() => sessionStorage.getItem(KEY_KEY) || localStorage.getItem(KEY_KEY)) || '';
 
   const isLocal = () => cfg.provider === 'openai' && /\/\/(localhost|127\.0\.0\.1)/.test(cfg.base);
-  const ready = () => !!key || isLocal();           // local servers usually need no key
+  const ready = () => !!key || isLocal();           // local servers usually need no key; the CLI bridge always needs its token
   const get = () => ({ ...cfg, hasKey: !!key });
 
   /** Persist settings; pass newKey (string) to change the key, undefined to leave it. */
@@ -39,6 +39,19 @@ PF.Teacher = (() => {
   /** One round-trip. Always resolves to a parsed JSON object or throws a readable Error. */
   async function call(system, user) {
     if (!ready()) throw new Error('Add an API key first.');
+    // Local CLI bridge: uses your logged-in Claude Code / Codex, no API key (see bridge/bridge.js).
+    if (cfg.provider === 'cli') {
+      let r;
+      try {
+        r = await fetch(cfg.bridge.replace(/\/+$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pf-token': key },
+          body: JSON.stringify({ tool: cfg.tool, prompt: system + '\n\n' + user }) });
+      } catch (e) { throw new Error('Could not reach the bridge. Is `node bridge/bridge.js` running? ' + (e.message || '')); }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(`Bridge error ${r.status}: ${j.error || 'unknown'}`);
+      const o = PF.Monitor.tryObj(j.text || '');
+      if (!o) throw new Error('The CLI did not return JSON. Try again.');
+      return o;
+    }
     let res;
     try {
       res = cfg.provider === 'anthropic'

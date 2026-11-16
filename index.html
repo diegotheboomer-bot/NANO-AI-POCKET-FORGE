@@ -111,9 +111,15 @@
             <div class="seg" id="t-provider" role="radiogroup" aria-label="Teacher provider">
               <button role="radio" data-prov="anthropic">Anthropic<small>Claude API</small></button>
               <button role="radio" data-prov="openai">OpenAI-compatible<small>OpenAI · OpenRouter · Ollama</small></button>
+              <button role="radio" data-prov="cli">Local CLI<small>Claude Code · Codex, no key</small></button>
             </div>
-            <label class="field tgap"><span>API key</span><input type="password" id="t-key" autocomplete="off" placeholder="sk-…"></label>
-            <label class="field"><span>Model</span><input type="text" id="t-model" autocomplete="off"></label>
+            <label class="field tgap"><span id="t-key-label">API key</span><input type="password" id="t-key" autocomplete="off" placeholder="sk-…"></label>
+            <label class="field" id="t-model-wrap"><span>Model</span><input type="text" id="t-model" autocomplete="off"></label>
+            <div id="t-cli-wrap" hidden>
+              <label class="field"><span>CLI tool</span><select id="t-tool"><option value="claude">Claude Code (claude)</option><option value="codex">Codex (codex), experimental</option></select></label>
+              <label class="field"><span>Bridge URL</span><input type="text" id="t-bridge" autocomplete="off" placeholder="http://127.0.0.1:8787"></label>
+              <p class="hint">Start it in another terminal: <code>node bridge/bridge.js</code>, then paste the token it prints above.</p>
+            </div>
             <label class="field" id="t-base-wrap"><span>Base URL</span><input type="text" id="t-base" autocomplete="off" placeholder="https://api.openai.com/v1"></label>
             <label class="check"><input type="checkbox" id="t-remember"> Remember key on this device <em>(otherwise cleared when the tab closes)</em></label>
             <p class="hint">Privacy: using the teacher sends your task, rules, examples and any input you ask about to the provider you chose. Don't use real customer data.</p>

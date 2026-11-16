@@ -353,20 +353,24 @@
     const t = Teacher.get(), s = Store.get();
     $$('#t-provider button').forEach(b => b.setAttribute('aria-checked', b.dataset.prov === t.provider));
     $('#t-base-wrap').hidden = t.provider !== 'openai';
+    $('#t-model-wrap').hidden = t.provider === 'cli'; $('#t-cli-wrap').hidden = t.provider !== 'cli';
+    tEl('t-key-label').textContent = t.provider === 'cli' ? 'Bridge token' : 'API key';
+    if (document.activeElement !== tEl('t-bridge')) tEl('t-bridge').value = t.bridge;
+    tEl('t-tool').value = t.tool;
     if (document.activeElement !== tEl('t-model')) tEl('t-model').value = t.model;
     if (document.activeElement !== tEl('t-base')) tEl('t-base').value = t.base;
     tEl('t-remember').checked = t.remember;
-    tEl('t-key').placeholder = t.hasKey ? '•••••••• (saved for this session)' : (t.provider === 'anthropic' ? 'sk-ant-…' : 'sk-… (optional for localhost)');
+    tEl('t-key').placeholder = t.hasKey ? '•••••••• (saved for this session)' : (t.provider === 'cli' ? 'token printed by the bridge' : t.provider === 'anthropic' ? 'sk-ant-…' : 'sk-… (optional for localhost)');
     const ok = Teacher.ready();
     tEl('t-gen').disabled = !ok || !s.forged; tEl('t-diag').disabled = !ok || !s.forged; tEl('t-forget').disabled = !t.hasKey;
   }
   $('#t-provider').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const anth = b.dataset.prov === 'anthropic';
-    Teacher.save({ provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
+    Teacher.save(b.dataset.prov === 'cli' ? { provider: 'cli' } : { provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
   });
   function saveTeacherForm() {
-    Teacher.save({ model: tEl('t-model').value.trim(), base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
+    Teacher.save({ tool: tEl('t-tool').value, bridge: tEl('t-bridge').value.trim() || 'http://127.0.0.1:8787', model: tEl('t-model').value.trim() || Teacher.get().model, base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
       tEl('t-key').value.trim() ? tEl('t-key').value : undefined);
     tEl('t-key').value = '';
   }
