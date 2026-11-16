@@ -173,15 +173,18 @@ PF.Engine = (() => {
   }
 
   /* ════════════════════════ REAL BACKEND (Transformers.js) ═══════════════ */
-  let tf = null, pipe = null, pipeKey = '';
+  let tf = null, pipe = null, pipeKey = '', webgpuBroken = false;
+  // One generation at a time: a WebGPU session can't safely run two prompts concurrently.
+  let queue = Promise.resolve();
+  const serial = fn => { const r = queue.then(fn, fn); queue = r.catch(() => {}); return r; };
 
   /** Load (and cache) a text-generation pipeline. Tries WebGPU first, then WASM. */
-  async function loadReal(model, onProgress = () => {}) {
+  async function loadReal(model, onProgress = () => {}, { wasmOnly = false } = {}) {
     if (pipe && pipeKey === model.id) return pipe;
     tf = tf || await import(PF.Models.TF_URL);               // dynamic import works from file:// too
     const caps = await detect();
     const attempts = [
-      ...(caps.webgpu ? [{ device: 'webgpu', dtype: 'q4' }] : []),
+      ...(caps.webgpu && !wasmOnly && !webgpuBroken ? [{ device: 'webgpu', dtype: 'q4' }] : []),
       { device: 'wasm', dtype: 'q8' }, { device: 'wasm', dtype: 'q4' },
     ];
     // Aggregate per-file byte progress into one overall percentage.
@@ -208,7 +211,17 @@ PF.Engine = (() => {
 
   async function generateReal(cfg, input, modelId) {
     const t0 = performance.now();
-    const out = await pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 256, do_sample: false });
+    const gen = () => pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 256, do_sample: false });
+    let out;
+    try { out = await gen(); }
+    catch (e) {
+      // WebGPU kernels can fail on some GPUs/drivers (e.g. "Can't perform binary op"). Fall back to WASM once and retry.
+      if (!String(pipe.pfDevice).startsWith('webgpu')) throw e;
+      console.warn('WebGPU generation failed, switching to WASM:', e);
+      webgpuBroken = true; pipe = null;
+      await loadReal(PF.Models.get(modelId), () => {}, { wasmOnly: true });
+      out = await gen();
+    }
     const text = out[0].generated_text.at(-1).content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
     return { text, meta: `${pipe.pfDevice} · ${cfg.examples.length} examples in context · ${Math.round(performance.now() - t0)} ms` };
   }
@@ -217,7 +230,7 @@ PF.Engine = (() => {
   /** @param {object} state PF.Store state  @param {{base?:boolean}} opts base=true ignores all training */
   async function run(state, input, opts = {}) {
     const cfg = { task: state.task, rules: opts.base ? [] : state.rules, examples: opts.base ? [] : state.examples };
-    return state.backend === 'real' && isRealLoaded(state.modelId) ? generateReal(cfg, input, state.modelId) : simulate(cfg, input);
+    return state.backend === 'real' && isRealLoaded(state.modelId) ? serial(() => generateReal(cfg, input, state.modelId)) : simulate(cfg, input);
   }
 
   return { run, detect, loadReal, isRealLoaded, suggestInputs, detectMode, buildMessages };
