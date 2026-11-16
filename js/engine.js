@@ -184,7 +184,8 @@ PF.Engine = (() => {
     tf = tf || await import(PF.Models.TF_URL);               // dynamic import works from file:// too
     const caps = await detect();
     const attempts = [
-      ...(caps.webgpu && !wasmOnly && !webgpuBroken ? [{ device: 'webgpu', dtype: 'q4' }] : []),
+      // Newer repos ship q4f16 (needs shader-f16); older ones ship q4. Each failed attempt falls through to the next.
+      ...(caps.webgpu && !wasmOnly && !webgpuBroken ? [{ device: 'webgpu', dtype: 'q4f16' }, { device: 'webgpu', dtype: 'q4' }] : []),
       { device: 'wasm', dtype: 'q8' }, { device: 'wasm', dtype: 'q4' },
     ];
     // Aggregate per-file byte progress into one overall percentage.
@@ -221,12 +222,14 @@ PF.Engine = (() => {
       await loadReal(PF.Models.get(modelId), () => {}, { wasmOnly: true });
       out = await go();
     }
-    return out[0].generated_text.at(-1).content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    // Strip Qwen3-style <think> blocks (closed or cut off) and code fences.
+    return out[0].generated_text.at(-1).content.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
   }
 
   async function generateReal(cfg, input, modelId) {
     const t0 = performance.now();
     const msgs = buildMessages(cfg.task, cfg.rules, cfg.examples, input);
+    if (PF.Models.get(modelId).noThink) msgs[msgs.length - 1].content += ' /no_think';   // Qwen3 soft switch: skip the reasoning phase
     let text = await generate(modelId, msgs), repaired = '';
     // Self-repair: if the reply is invalid JSON / misses keys, tell the model once and retry.
     const bad = PF.Monitor.check(cfg.examples, input, text).find(i => i.repair);

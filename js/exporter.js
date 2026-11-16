@@ -13,7 +13,7 @@ PF.Exporter = (() => {
 
   /** The slice of state the runtime needs. */
   const widgetConfig = s => ({
-    version: ver(s), task: s.task, model: PF.Models.get(s.modelId).hfId,
+    version: ver(s), task: s.task, model: PF.Models.get(s.modelId).hfId, noThink: !!PF.Models.get(s.modelId).noThink,
     rules: s.rules, examples: s.examples,
   });
 
@@ -27,7 +27,7 @@ PF.Exporter = (() => {
     const m = PF.Models.get(s.modelId);
     return { format: 'pocketforge-bundle/1', name: 'pocketforge-widget', version: ver(s), createdAt: new Date().toISOString(),
       task: s.task,
-      base: { id: m.id, hf: m.hfId, params: m.params, dtypeByDevice: { webgpu: 'q4', wasm: 'q8' }, files: ['onnx/model_q4.onnx', 'onnx/model_quantized.onnx', 'config.json', 'tokenizer.json', 'tokenizer_config.json', 'generation_config.json'] },
+      base: { id: m.id, hf: m.hfId, params: m.params, dtypeByDevice: { webgpu: ['q4f16', 'q4'], wasm: ['q8', 'q4'] }, files: ['onnx/model_q4f16.onnx', 'onnx/model_q4.onnx', 'onnx/model_quantized.onnx', 'config.json', 'tokenizer.json', 'tokenizer_config.json', 'generation_config.json'] },
       adapter: { file: `adapter.v${ver(s)}.json`, examples: s.examples.length, rules: s.rules.length },
       runtime: { library: '@huggingface/transformers', url: PF.Models.TF_URL, router: ['webgpu', 'wasm', 'rule-fallback'] },
       history: s.history };
@@ -49,9 +49,9 @@ PF.Exporter = (() => {
 async function pickRoutes() {
   const routes = [];
   try {
-    if (navigator.gpu && await navigator.gpu.requestAdapter()) routes.push({ device: 'webgpu', dtype: 'q4' });
+    if (navigator.gpu && await navigator.gpu.requestAdapter()) routes.push({ device: 'webgpu', dtype: 'q4f16' }, { device: 'webgpu', dtype: 'q4' });
   } catch (e) { /* no WebGPU */ }
-  if (typeof WebAssembly === 'object') routes.push({ device: 'wasm', dtype: 'q8' });
+  if (typeof WebAssembly === 'object') routes.push({ device: 'wasm', dtype: 'q8' }, { device: 'wasm', dtype: 'q4' });
   return routes;                       // empty → rule fallback
 }
 
@@ -91,8 +91,10 @@ function nearest(input) {
 async function run(input, onStatus) {
   if (generator === null) generator = (await loadModel(onStatus)) || false;
   if (!generator) return nearest(input);
-  const out = await generator(buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input), { max_new_tokens: 160, do_sample: false });
-  return out[0].generated_text.at(-1).content.trim();
+  const msgs = buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input);
+  if (CONFIG.noThink) msgs[msgs.length - 1].content += ' /no_think';   // Qwen3: skip the reasoning phase
+  const out = await generator(msgs, { max_new_tokens: 160, do_sample: false });
+  return out[0].generated_text.at(-1).content.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
 }
 
 // ── 4. Minimal UI (style freely) ──
@@ -125,7 +127,7 @@ btn.onclick = async () => {
   }
 
   /** Hugging Face CLI command to fetch the real ONNX weights for the chosen base. */
-  const onnxCommand = s => `huggingface-cli download ${PF.Models.get(s.modelId).hfId} \\\n  --include "onnx/model_q4.onnx" "onnx/model_quantized.onnx" "*.json" \\\n  --local-dir ./model`;
+  const onnxCommand = s => `huggingface-cli download ${PF.Models.get(s.modelId).hfId} \\\n  --include "onnx/model_q4f16.onnx" "onnx/model_q4.onnx" "onnx/model_quantized.onnx" "*.json" \\\n  --local-dir ./model`;
 
   return { snippet, manifest, adapter, widgetPage, download, onnxCommand, ver };
 })();
