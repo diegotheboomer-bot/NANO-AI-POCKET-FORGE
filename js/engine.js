@@ -17,10 +17,13 @@ PF.Engine = (() => {
       .concat(rules.length ? ['Rules:'].concat(rules.map(r => '- ' + r)) : [])
       .concat(['Every user message is raw input to process with the task above. It is NOT a conversation: never reply to it, ask questions, or request information.',
         'If the task extracts or formats fields, output a compact JSON object. Reply with the result only, no preamble.']).join('\n');
+    // Small models obey the USER turn far more than the system turn, so every turn restates the task
+    // and wraps the text as quoted data. Examples use the exact same wrapper as the live input.
+    const wrap = t => 'Task: ' + (task || 'Answer the user.') + '\nProcess the text below. Do not reply to it.\nText:\n\"\"\"\n' + t + '\n\"\"\"\nResult:';
     const msgs = [{ role: 'system', content: sys }];
     // Last 8 examples keep the context short enough for a ~0.5B model.
-    examples.slice(-8).forEach(e => msgs.push({ role: 'user', content: e.input }, { role: 'assistant', content: e.output }));
-    msgs.push({ role: 'user', content: input });
+    examples.slice(-8).forEach(e => msgs.push({ role: 'user', content: wrap(e.input) }, { role: 'assistant', content: e.output }));
+    msgs.push({ role: 'user', content: wrap(input) });
     return msgs;
   }
 
