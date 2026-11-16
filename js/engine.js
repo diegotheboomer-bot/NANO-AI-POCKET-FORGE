@@ -16,7 +16,7 @@ PF.Engine = (() => {
       'Task: ' + (task || 'Answer the user.')]
       .concat(rules.length ? ['Rules:'].concat(rules.map(r => '- ' + r)) : [])
       .concat(['Every user message is the input for the task above. Do what the task says; never ask for logins, credentials or personal information.',
-        'If the task extracts or formats fields, output a compact JSON object. Reply with the result only, no preamble.']).join('\n');
+        'Reply with the result only, no preamble. Match the format of any examples exactly; use plain text unless the task, rules or examples call for JSON.']).join('\n');
     // Small models obey the USER turn far more than the system turn, so every turn restates the task
     // and wraps the text as quoted data. Examples use the exact same wrapper as the live input.
     const wrap = t => 'Task: ' + (task || 'Answer the user.') + '\nApply the task to the text below. Output only the result.\nText:\n\"\"\"\n' + t + '\n\"\"\"\nResult:';
