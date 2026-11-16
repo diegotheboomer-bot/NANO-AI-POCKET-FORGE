@@ -15,4 +15,6 @@ Opening `index.html` directly also works, but WebGPU needs a secure context (`lo
 - **`.onnx` export:** weights are not generated; the Export tab gives the exact Hugging Face download command.
 
 ## Layout
-`index.html` · `styles.css` · `js/{store,models,engine,trainer,exporter,ui}.js`
+`index.html` · `styles.css` · `js/{store,models,engine,starter,tester,trainer,exporter,ui}.js`
+
+

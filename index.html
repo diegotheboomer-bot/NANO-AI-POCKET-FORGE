@@ -117,6 +117,16 @@
             </div>
 
             <div class="glass card">
+              <div class="card-head">
+                <div><h2>Self-test</h2><p class="sub" id="test-sub">Forge a widget to run tests.</p></div>
+                <button class="btn ghost" id="test-btn">Run tests</button>
+              </div>
+              <div class="score"><b id="score-num">—</b><div class="bar"><i id="score-bar"></i></div></div>
+              <ul class="list tests" id="test-list"></ul>
+              <button class="btn ghost" id="fix-btn" hidden>Copy failures into examples</button>
+            </div>
+
+            <div class="glass card">
               <h2>Bundle knowledge</h2>
               <div class="counts"><div><b id="n-ex">0</b><span>examples</span></div><div><b id="n-rules">0</b><span>rules</span></div><div><b id="n-ver">—</b><span>version</span></div></div>
               <ul class="list" id="knowledge-list"></ul>
@@ -137,7 +147,7 @@
             </div>
             <div class="seg small" id="run-as" role="radiogroup" aria-label="Model version to run">
               <button role="radio" data-as="current" aria-checked="true">Current</button>
-              <button role="radio" data-as="base" aria-checked="false">Base (v1.0.0)</button>
+              <button role="radio" data-as="base" aria-checked="false">Untrained</button>
             </div>
           </div>
           <div class="msgs" id="msgs" aria-live="polite"></div>
@@ -197,6 +207,8 @@
   <script src="js/store.js"></script>
   <script src="js/models.js"></script>
   <script src="js/engine.js"></script>
+  <script src="js/starter.js"></script>
+  <script src="js/tester.js"></script>
   <script src="js/trainer.js"></script>
   <script src="js/exporter.js"></script>
   <script src="js/ui.js"></script>

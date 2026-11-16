@@ -3,7 +3,7 @@
    Sections: helpers · stepper · tabs · build · expand · preview · export
    ========================================================================== */
 (() => {
-  const { Store, Models, Engine, Trainer, Exporter } = PF;
+  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester } = PF;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -70,7 +70,7 @@
     const task = $('#task').value.trim();
     if (!task) { toast('Describe what your micro-AI should do first.', true); $('#task').focus(); return; }
     const s = Store.get();
-    if (s.forged && (s.examples.length || s.rules.length) && !confirm('Re-forging resets your trained examples and rules. Continue?')) return;
+    if (s.forged && s.history.length > 1 && !confirm('Re-forging resets everything you added and re-runs auto-teach. Continue?')) return;
     if (forging) return;
     forging = true; $('#forge-btn').disabled = true;
 
@@ -93,15 +93,28 @@
           }
         } },
       { label: 'Compiling runtime', detail: 'WebGPU shaders / WASM fallback router' },
-      { label: 'Packaging widget bundle', detail: 'manifest · adapter shard · embed snippet' },
+      { label: 'Auto-teaching from your task', detail: 'Matching a starter pack of examples & rules', run: async api => {
+          pack = Starter.forTask(task);
+          api.log(pack ? `  matched “${pack.label}”: ${pack.examples.length} examples, ${pack.rules.length} rules, ${pack.tests.length} held-out tests`
+                       : '  no starter pack for this task. Add your own examples in Expand & Fine-Tune');
+          await sleep(500);
+        } },
+      { label: 'Self-testing', detail: 'Scoring the widget on held-out cases', run: async api => {
+          const tmp = { ...Store.get(), task, backend, forged: true, examples: pack ? pack.examples : [], rules: pack ? pack.rules : [], tests: pack ? pack.tests : [] };
+          result = await Tester.run(tmp, (d, t) => api.progress(d / t));
+          api.log(result.total ? `  ${result.passed}/${result.total} passed · score ${Math.round(result.score * 100)}%` : '  nothing to test yet');
+        } },
     ];
+    let pack = null, result = null;
     try {
       await runStepper({ listEl: $('#forge-steps'), barEl: $('#forge-bar'), logEl: $('#forge-log'), steps });
-      Store.set({ task, backend, forged: true, version: [1, 0, 0], examples: [], rules: [],
-        history: [{ version: '1.0.0', at: Date.now(), note: `Base forged on ${model.name}` }] });
-      $('#forge-sub').textContent = 'Done. Your base widget v1.0.0 is ready.';
+      Store.set({ task, backend, forged: true, version: [1, 0, 0],
+        examples: pack ? pack.examples : [], rules: pack ? pack.rules : [], tests: pack ? pack.tests : [],
+        packLabel: pack ? pack.label : null, lastTest: result, prevScore: null,
+        history: [{ version: '1.0.0', at: Date.now(), note: `Forged on ${model.name}` + (pack ? ` · auto-taught ${pack.examples.length} examples` : '') }] });
+      $('#forge-sub').textContent = pack ? `Done. v1.0.0 auto-taught with “${pack.label}”.` : 'Done. v1.0.0 forged. No starter pack matched, so add examples to teach it.';
       $('#forge-log').textContent += '✓ widget v1.0.0 ready\n';
-      toast('Base widget forged. Try it in Live Preview.');
+      toast(result && result.total ? `Forged. Self-test ${Math.round(result.score * 100)}%. Try it in Live Preview.` : 'Forged. Try it in Live Preview.');
       resetChat();
     } catch (e) { toast('Forge failed: ' + (e.message || e), true); }
     finally { forging = false; $('#forge-btn').disabled = false; }
@@ -147,7 +160,8 @@
     try {
       await runStepper({ listEl: $('#patch-steps'), barEl: null, logEl: null, steps });
       const res = Trainer.commit(Store, items, rules);
-      if (res) { toast(`Model patched to ${Store.versionString(res.version)} (${res.note})`); $('#ex-text').value = ''; $('#rules-text').value = ''; }
+      if (res) { Store.set({ tests: Store.get().tests.filter(t => !items.some(i => i.input === t.input)) });   // taught cases are no longer held-out
+        $('#ex-text').value = ''; $('#rules-text').value = ''; await runTests(`Patched to ${Store.versionString(res.version)} (${res.note})`); }
       else toast('Nothing new: those examples/rules already exist.', true);
     } catch (e) { toast('Patch failed: ' + e.message, true); }
     finally { patching = false; renderExpand(); }
@@ -161,9 +175,10 @@
     $('#n-ver').textContent = s.forged ? Store.versionString() : '—';
     const items = [
       ...s.rules.map((r, i) => `<li><span>⚙ ${esc(r)}</span><button data-rule="${i}" aria-label="Remove rule">×</button></li>`),
-      ...s.examples.map((e, i) => `<li><span>${esc(e.input)} → ${esc(e.output)}</span><button data-ex="${i}" aria-label="Remove example">×</button></li>`),
+      ...s.examples.map((e, i) => `<li><span>${e.src === 'starter' ? '★ ' : ''}${esc(e.input)} → ${esc(e.output)}</span><button data-ex="${i}" aria-label="Remove example">×</button></li>`),
     ];
     $('#knowledge-list').innerHTML = items.join('') || '<li class="empty">Nothing added yet. The widget uses only its base model.</li>';
+    renderTests();
     $('#history-list').innerHTML = s.history.map(h => `<li><span><b>v${esc(h.version)}</b>${esc(h.note)}</span><span>${new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></li>`).join('') || '<li class="empty">No versions yet.</li>';
   }
   $('#knowledge-list').addEventListener('click', e => {
@@ -171,6 +186,52 @@
     const s = Store.get();
     if (b.dataset.ex != null) Store.set({ examples: s.examples.filter((_, i) => i !== +b.dataset.ex) });
     if (b.dataset.rule != null) Store.set({ rules: s.rules.filter((_, i) => i !== +b.dataset.rule) });
+  });
+
+  /* ── Self-test card ─────────────────────────────────────────────────── */
+  let testing = false;
+  async function runTests(prefix = 'Tests finished') {
+    const s = Store.get();
+    if (testing || !s.forged) return;
+    testing = true; $('#test-btn').disabled = true; $('#test-sub').textContent = 'Running…';
+    try {
+      if (s.backend === 'real' && !Engine.isRealLoaded(s.modelId)) {
+        await Engine.loadReal(Models.get(s.modelId), p => { $('#test-sub').textContent = `Loading model… ${Math.round(p * 100)}%`; });
+      }
+      const res = await Tester.run(s, (d, t) => { $('#test-sub').textContent = `Running ${d}/${t}…`; });
+      const before = s.lastTest && s.lastTest.total ? s.lastTest.score : null;
+      Store.set({ lastTest: res, prevScore: before });
+      if (res.total) {
+        const delta = before == null ? '' : ` (${res.score >= before ? '+' : ''}${Math.round((res.score - before) * 100)} pts)`;
+        toast(`${prefix}. Self-test ${Math.round(res.score * 100)}%${delta}`);
+      } else toast(prefix);
+    } catch (e) { toast('Tests failed: ' + (e.message || e), true); }
+    finally { testing = false; renderTests(); }
+  }
+  $('#test-btn').addEventListener('click', () => runTests());
+
+  function renderTests() {
+    const s = Store.get(), t = s.lastTest;
+    $('#test-btn').disabled = !s.forged || testing;
+    if (!s.forged || !t || !t.total) {
+      $('#score-num').textContent = '—'; $('#score-bar').style.width = '0';
+      $('#test-sub').textContent = s.forged ? 'No tests yet. Add examples, then run tests: each is checked with itself held out.' : 'Forge a widget to run tests.';
+      $('#test-list').innerHTML = ''; $('#fix-btn').hidden = true; return;
+    }
+    const pct = Math.round(t.score * 100), d = s.prevScore == null ? '' : ` · ${t.score >= s.prevScore ? '+' : ''}${Math.round((t.score - s.prevScore) * 100)} pts vs previous`;
+    $('#score-num').textContent = pct + '%'; $('#score-bar').style.width = pct + '%';
+    $('#test-sub').textContent = `${t.passed}/${t.total} passed${d}`;
+    $('#test-list').innerHTML = t.cases.map(c => `<li><div class="row1"><span class="${c.pass ? 'ok' : 'no'}">${c.pass ? '✓' : '✗'}</span><span>${esc(c.input)}</span></div>` +
+      (c.pass ? '' : `<small>expected ${esc(c.expected)}</small><small>got ${esc(c.got)}</small>`) + '</li>').join('');
+    $('#fix-btn').hidden = !t.cases.some(c => !c.pass);
+  }
+  // Refine loop: put the failed cases (with the CORRECT answers) into the examples box for review.
+  $('#fix-btn').addEventListener('click', () => {
+    const fails = (Store.get().lastTest?.cases || []).filter(c => !c.pass && c.kind === 'held-out');
+    const lines = fails.map(c => `${c.input.replace(/\n/g, '\\n')} => ${c.expected}`);
+    if (!lines.length) return toast('Failures are on training examples. Edit or delete those instead.', true);
+    const box = $('#ex-text'); box.value = (box.value.trim() ? box.value.trim() + '\n' : '') + lines.join('\n'); box.focus();
+    toast('Review the lines, then click Update & Patch Model. Taught cases leave the held-out test set.');
   });
 
   /* ════════════════════ 3 · PREVIEW ════════════════════ */
@@ -183,7 +244,7 @@
   }
   function renderPreviewHeader() {
     const s = Store.get(), m = Models.get(s.modelId);
-    $('#chat-sub').textContent = s.forged ? `${m.name} · ${Store.versionString()} · ${s.backend === 'real' ? 'real inference' : 'simulated inference'}` : 'Forge a widget to start testing.';
+    $('#chat-sub').textContent = s.forged ? `${m.name} · ${Store.versionString()} · ${s.backend === 'real' ? 'real inference' : 'simulated inference'}` + (s.lastTest && s.lastTest.total ? ` · self-test ${Math.round(s.lastTest.score * 100)}%` : '') : 'Forge a widget to start testing.';
     $('#send-btn').disabled = !s.forged;
     $('#sample-inputs').innerHTML = s.forged ? (Engine.suggestInputs(s.task) || []).map((t, i) => `<button type="button" data-i="${i}">Sample ${i + 1}</button>`).join('') : '';
     $$('#run-as button').forEach(b => b.setAttribute('aria-checked', b.dataset.as === runAs));
@@ -212,7 +273,7 @@
       const { text, meta } = await Engine.run(s, input, { base: runAs === 'base' });
       bot.textContent = '';
       for (let i = 0; i < text.length; i += 6) { bot.textContent = text.slice(0, i + 6); msgs.scrollTop = 1e9; await sleep(8); }   // streamed feel
-      bot.insertAdjacentHTML('beforeend', `<span class="meta">${esc(runAs === 'base' ? 'base v1.0.0 · ' : '')}${esc(meta)}</span>`);
+      bot.insertAdjacentHTML('beforeend', `<span class="meta">${esc(runAs === 'base' ? 'untrained · ' : '')}${esc(meta)}</span>`);
     } catch (err) {
       bot.textContent = 'Error: ' + (err.message || err);
     } finally { busy = false; $('#send-btn').disabled = false; msgs.scrollTop = 1e9; }

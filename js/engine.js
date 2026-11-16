@@ -41,7 +41,7 @@ PF.Engine = (() => {
     phone: /(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)\s?)?\d{2,4}[\s.-]\d{3,4}(?:[\s.-]\d{3,4})?/,
     price: /(?:[$€£]\s?\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s?(?:USD|EUR|GBP|dollars|euros|bucks))/i,
     date: /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:,? \d{4})?)\b/i,
-    order: /(?:#\s?\d{3,}|\b(?:order|ticket|ref|invoice)\s*(?:no\.?|number|#|:)?\s*[A-Z]?-?\d{3,})/i,
+    order: /#\s?\d{3,}|\b(?:order|ticket|ref|invoice)\s*(?:no\.?|number|:)?\s*([A-Z]?-?\d{3,})/i,
     qty: /\b(\d+)\s*(?:x|pcs|pieces|units)\b|\b(?:qty|quantity)[:\s]*(\d+)/i,
     product: /(?:selling|sell|for sale|bought|buying|ordered|order of|got a|have a)\s+(?:a|an|the|my|our|some)?\s*([^,.;\n$€£(]{3,40}?)(?=\s+(?:for|at|in|with|obo|on)\b|[,.;($€£\n]|$)/i,
   };
@@ -65,7 +65,7 @@ PF.Engine = (() => {
 
   /** Extract every field we know how to find; schemas below choose which to show. */
   function facts(text) {
-    const m = (rx) => { const r = text.match(rx); return r ? r[0].trim() : null; };
+    const m = (rx) => { const r = text.match(rx); return r ? r[0].trim().replace(/[,.;]+$/, '') : null; };   // drop trailing punctuation
     const low = text.toLowerCase();
     const prod = text.match(RX.product), qty = text.match(RX.qty);
     const phone = (text.match(new RegExp(RX.phone, 'g')) || []).find(p => { const d = p.replace(/\D/g, '').length; return d >= 7 && d <= 15 && !/^\d{4}-\d{2}-\d{2}$/.test(p); });
@@ -78,12 +78,13 @@ PF.Engine = (() => {
       email: m(RX.email),
       phone: phone ? phone.trim() : null,
       date: m(RX.date),
-      order_id: m(RX.order),
-      priority: has(['urgent', 'asap', 'immediately', 'down', "can't", 'cannot', 'broken', 'crash']) ? 'high' : has(['how do', 'question', 'wondering']) ? 'low' : 'medium',
-      category: has(['refund', 'charge', 'invoice', 'payment', 'billing']) ? 'billing'
+      order_id: (() => { const r = text.match(RX.order); return r ? (r[1] ? r[1] : r[0]).replace(/\s/g, '') : null; })(),
+      priority: has(['urgent', 'asap', 'immediately', 'down', "can't", 'cannot', 'broken', 'crash', 'scam', 'fraud', 'hacked', 'stolen', 'charged twice']) ? 'high' : has(['how do', 'question', 'wondering']) ? 'low' : 'medium',
+      category: has(['scam', 'fraud', 'hacked', 'stolen', 'phishing']) ? 'fraud'
+        : has(['refund', 'charge', 'invoice', 'payment', 'billing']) ? 'billing'
         : has(['error', 'crash', 'bug', 'broken', 'not working']) ? 'bug'
         : has(['password', 'login', 'account']) ? 'account'
-        : has(['shipping', 'delivery', 'package', 'tracking']) ? 'shipping' : 'general',
+        : has(['shipping', 'delivery', 'package', 'tracking', 'arrived', 'parcel', 'shipment', 'damaged']) ? 'shipping' : 'general',
       summary: firstSentence(text),
       sentiment: pos === neg ? 'neutral' : pos > neg ? 'positive' : 'negative',
     };
@@ -152,7 +153,8 @@ PF.Engine = (() => {
         keys = Object.keys(ranked[0][1]); source = 'adapted schema from your examples';
       }
       const obj = {}; keys.forEach(k => { const v = pick(k, f); if (v !== undefined) obj[k] = v; });
-      text = render(mode === 'summary' && !jsonEx.length ? f.summary : obj, rules, mode);
+      if (mode === 'sentiment' && examples.length && !jsonEx.length) { text = render(f.sentiment, rules, mode); source = 'adapted: plain-word labels'; }
+      else text = render(mode === 'summary' && !jsonEx.length ? f.summary : obj, rules, mode);
     }
     await new Promise(r => setTimeout(r, 280 + Math.random() * 320));   // feel like on-device latency
     return { text, meta: `simulated · ${source} · ${Math.round(performance.now() - t0)} ms` };
@@ -207,7 +209,7 @@ PF.Engine = (() => {
   async function generateReal(cfg, input, modelId) {
     const t0 = performance.now();
     const out = await pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 256, do_sample: false });
-    const text = out[0].generated_text.at(-1).content.trim();
+    const text = out[0].generated_text.at(-1).content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
     return { text, meta: `${pipe.pfDevice} · ${cfg.examples.length} examples in context · ${Math.round(performance.now() - t0)} ms` };
   }
 

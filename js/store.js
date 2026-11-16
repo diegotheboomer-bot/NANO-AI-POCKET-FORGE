@@ -17,6 +17,10 @@ PF.Store = (() => {
     examples: [],              // [{input, output}]
     rules: [],                 // [string]
     history: [],               // [{version, at, note}]
+    tests: [],                 // held-out cases [{input, expected}] from the starter pack
+    lastTest: null,            // latest self-test result
+    prevScore: null,           // score before the latest patch (for the delta)
+    packLabel: null,           // which starter pack auto-taught the widget
   });
 
   const listeners = [];
