@@ -186,6 +186,7 @@
     const s = Store.get();
     if (b.dataset.ex != null) Store.set({ examples: s.examples.filter((_, i) => i !== +b.dataset.ex) });
     if (b.dataset.rule != null) Store.set({ rules: s.rules.filter((_, i) => i !== +b.dataset.rule) });
+    scheduleRetest();
   });
 
   /* ── Self-test card ─────────────────────────────────────────────────── */
@@ -210,9 +211,37 @@
   }
   $('#test-btn').addEventListener('click', () => runTests());
 
+  /* Auto-improve: test → teach every failed held-out case its correct answer → retest (max 3 rounds).
+     Caveat: a case that was taught no longer measures generalisation, so the toast says how many were taught. */
+  let improving = false;
+  $('#auto-btn').addEventListener('click', async () => {
+    if (improving || testing || !Store.get().forged) return;
+    improving = true; $('#auto-btn').disabled = true;
+    let taught = 0;
+    try {
+      await runTests('Baseline');
+      for (let round = 1; round <= 3; round++) {
+        const fails = (Store.get().lastTest?.cases || []).filter(c => !c.pass && c.kind === 'held-out');
+        if (!fails.length) break;
+        const items = fails.map(c => ({ input: c.input, output: c.expected }));
+        if (!Trainer.commit(Store, items, [])) break;
+        taught += items.length;
+        Store.set({ tests: Store.get().tests.filter(t => !items.some(i => i.input === t.input)) });
+        await runTests(`Round ${round}: taught ${items.length}`);
+      }
+      const t = Store.get().lastTest;
+      toast(taught ? `Auto-improve done: taught ${taught} failed case${taught > 1 ? 's' : ''}, score ${Math.round((t?.score || 0) * 100)}%. Taught cases are no longer held-out.` : 'Nothing to fix: no held-out failures.');
+    } finally { improving = false; renderTests(); }
+  });
+
+  // Re-test automatically (debounced) after you delete an example or rule.
+  let retestTimer;
+  const scheduleRetest = () => { clearTimeout(retestTimer); retestTimer = setTimeout(() => runTests('Re-tested after edit'), 700); };
+
   function renderTests() {
     const s = Store.get(), t = s.lastTest;
-    $('#test-btn').disabled = !s.forged || testing;
+    $('#test-btn').disabled = !s.forged || testing || improving;
+    $('#auto-btn').disabled = !s.forged || testing || improving;
     if (!s.forged || !t || !t.total) {
       $('#score-num').textContent = '—'; $('#score-bar').style.width = '0';
       $('#test-sub').textContent = s.forged ? 'No tests yet. Add examples, then run tests: each is checked with itself held out.' : 'Forge a widget to run tests.';
