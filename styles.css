@@ -78,7 +78,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .field{display:block;margin-bottom:20px}
 .field>span{display:block;font-size:.8rem;font-weight:500;color:var(--muted);margin-bottom:8px}
 .field>span em{font-style:normal;color:var(--faint);font-weight:400;margin-left:6px}
-textarea,input[type=text]{
+textarea,input[type=text],input[type=password]{
   width:100%;resize:vertical;padding:14px 16px;border-radius:16px;border:1px solid var(--stroke);
   background:var(--field);color:var(--text);font:inherit;outline:none;transition:.25s var(--ease)}
 textarea::placeholder{color:var(--faint)}
@@ -224,3 +224,16 @@ body.busy .ambient i{animation-play-state:paused}
 .fb button:hover:not(:disabled){color:#fff;border-color:rgba(255,255,255,.4)}
 .fb button:disabled{opacity:.7;cursor:default}
 .fixbox{width:100%;margin-top:10px;font:.78rem ui-monospace,Menlo,Consolas,monospace;padding:10px;border-radius:12px;min-height:80px}
+
+/* AI Teacher card */
+.opt{font-style:normal;font-size:.7rem;font-weight:400;color:var(--faint);margin-left:8px;text-transform:none;letter-spacing:0}
+.tgap{margin-top:16px}
+.check{display:flex;gap:8px;align-items:center;font-size:.8rem;color:var(--muted);margin:-4px 0 12px}.check em{font-style:normal;color:var(--faint)}
+.check input{accent-color:#fff}
+.tnotes{margin:0 0 12px}
+.list.props{max-height:280px;margin-bottom:14px}
+.list.props li{justify-content:flex-start;align-items:flex-start;gap:10px}
+.list.props li span{white-space:normal;overflow:visible}
+.list.props b{font-weight:500;color:#fff;margin-right:6px;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
+.list.props input{accent-color:#fff;margin-top:3px}
+.fb small{align-self:center;color:var(--faint);font-size:.72rem}

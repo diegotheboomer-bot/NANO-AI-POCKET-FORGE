@@ -18,3 +18,6 @@ Opening `index.html` directly also works, but WebGPU needs a secure context (`lo
 `index.html` · `styles.css` · `js/{store,models,engine,starter,tester,trainer,exporter,ui}.js`
 
 
+
+## AI Teacher (optional)
+Expand & Fine-Tune → AI Teacher. Paste an API key for Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama/LM Studio on localhost). It can generate training data + held-out tests, diagnose failing tests, and judge single replies. Off by default. Using it sends your task, rules, examples and queried inputs to that provider. The key stays in sessionStorage unless "remember" is ticked and is never exported. Verified against a mocked API only.

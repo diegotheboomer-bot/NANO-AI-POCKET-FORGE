@@ -3,7 +3,7 @@
    Sections: helpers · stepper · tabs · build · expand · preview · export
    ========================================================================== */
 (() => {
-  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester, Monitor } = PF;
+  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester, Monitor, Teacher } = PF;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -307,11 +307,26 @@
       const ctxEx = runAs === 'base' ? [] : s.examples;
       const issues = Monitor.check(ctxEx, input, text);
       if (issues.length) bot.insertAdjacentHTML('beforeend', '<div class="flags">' + issues.map(i => `<span class="flag ${i.level}">${i.level === 'info' ? 'ℹ' : '⚠'} ${esc(i.msg)}</span>`).join('') + '</div>');
-      if (runAs !== 'base') { bot._ctx = { input, text }; bot.insertAdjacentHTML('beforeend', '<div class="fb"><button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button></div>'); }
+      if (runAs !== 'base') { bot._ctx = { input, text }; bot.insertAdjacentHTML('beforeend', `<div class="fb">${fbButtons()}</div>`); }
     } catch (err) {
       bot.textContent = 'Error: ' + (err.message || err);
     } finally { busy = false; $('#send-btn').disabled = false; msgs.scrollTop = 1e9; }
   });
+
+  const fbButtons = () => '<button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button>' + (Teacher.ready() ? '<button data-fb="teacher">🎓 Ask teacher</button>' : '');
+  function openFix(bot, value, note = '') {
+    const fb = bot.querySelector('.fb');
+    fb.innerHTML = '<textarea class="fixbox" aria-label="Correct output"></textarea><button data-fb="save">Save correction</button><button data-fb="cancel">Cancel</button>' + (note ? `<small>${esc(note)}</small>` : '');
+    fb.querySelector('textarea').value = value; fb.querySelector('textarea').focus();
+  }
+  async function askTeacherAbout(bot, btn) {
+    btn.disabled = true; btn.textContent = '🎓 Thinking…';
+    try {
+      const v = await Teacher.judge(Store.get(), bot._ctx.input, bot._ctx.text);
+      if (v.correct) { toast('Teacher: looks correct. ' + v.reason); btn.textContent = '🎓 Teacher agrees'; }
+      else openFix(bot, v.better, 'Teacher: ' + v.reason);            // prefill the correction, you decide whether to save it
+    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = '🎓 Ask teacher'; }
+  }
 
   /* ── Learn from use: 👍 / ✏ add the (input → output) pair to the bundle and re-test ── */
   function teach(bot, output) {
@@ -324,13 +339,82 @@
   msgs.addEventListener('click', e => {
     const b = e.target.closest('[data-fb]'), bot = e.target.closest('.msg.bot'); if (!b || !bot || !bot._ctx) return;
     if (b.dataset.fb === 'good') return teach(bot, bot._ctx.text);
-    if (b.dataset.fb === 'fix') {
-      const fb = bot.querySelector('.fb');
-      fb.innerHTML = '<textarea class="fixbox" aria-label="Correct output"></textarea><button data-fb="save">Save correction</button><button data-fb="cancel">Cancel</button>';
-      fb.querySelector('textarea').value = bot._ctx.text; fb.querySelector('textarea').focus();
-    }
+    if (b.dataset.fb === 'fix') openFix(bot, bot._ctx.text);
     if (b.dataset.fb === 'save') { const v = bot.querySelector('.fixbox').value.trim(); v ? teach(bot, v) : toast('Type the correct output first.', true); }
-    if (b.dataset.fb === 'cancel') bot.querySelector('.fb').innerHTML = '<button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button>';
+    if (b.dataset.fb === 'cancel') bot.querySelector('.fb').innerHTML = fbButtons();
+    if (b.dataset.fb === 'teacher') askTeacherAbout(bot, b);
+  });
+
+  /* ════════════════════ AI TEACHER (optional) ════════════════════ */
+  let proposal = null;
+  const tEl = id => document.getElementById(id);
+
+  function renderTeacher() {
+    const t = Teacher.get(), s = Store.get();
+    $$('#t-provider button').forEach(b => b.setAttribute('aria-checked', b.dataset.prov === t.provider));
+    $('#t-base-wrap').hidden = t.provider !== 'openai';
+    if (document.activeElement !== tEl('t-model')) tEl('t-model').value = t.model;
+    if (document.activeElement !== tEl('t-base')) tEl('t-base').value = t.base;
+    tEl('t-remember').checked = t.remember;
+    tEl('t-key').placeholder = t.hasKey ? '•••••••• (saved for this session)' : (t.provider === 'anthropic' ? 'sk-ant-…' : 'sk-… (optional for localhost)');
+    const ok = Teacher.ready();
+    tEl('t-gen').disabled = !ok || !s.forged; tEl('t-diag').disabled = !ok || !s.forged; tEl('t-forget').disabled = !t.hasKey;
+  }
+  $('#t-provider').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const anth = b.dataset.prov === 'anthropic';
+    Teacher.save({ provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
+  });
+  function saveTeacherForm() {
+    Teacher.save({ model: tEl('t-model').value.trim(), base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
+      tEl('t-key').value.trim() ? tEl('t-key').value : undefined);
+    tEl('t-key').value = '';
+  }
+  async function withTeacher(label, fn) {
+    saveTeacherForm(); renderTeacher();
+    const status = tEl('t-status'); status.textContent = label + '…';
+    ['t-connect', 't-gen', 't-diag'].forEach(id => tEl(id).disabled = true);
+    try { await fn(); } catch (e) { status.textContent = '✗ ' + e.message; toast(e.message, true); }
+    finally { renderTeacher(); tEl('t-connect').disabled = false; }
+  }
+  tEl('t-connect').addEventListener('click', () => withTeacher('Testing connection', async () => {
+    await Teacher.call('Reply with one JSON object only.', 'Return {"ok":true}');
+    tEl('t-status').textContent = '✓ Connected. The teacher can now generate data, review failures and judge replies.';
+  }));
+  tEl('t-forget').addEventListener('click', () => { Teacher.forget(); tEl('t-status').textContent = 'Key removed.'; renderTeacher(); });
+
+  tEl('t-gen').addEventListener('click', () => withTeacher('Teacher is writing training data', async () => {
+    showProposal(await Teacher.generate(Store.get()));
+  }));
+  tEl('t-diag').addEventListener('click', () => withTeacher('Teacher is reviewing failures', async () => {
+    const fails = (Store.get().lastTest?.cases || []).filter(c => !c.pass);
+    if (!fails.length) { tEl('t-status').textContent = 'No failing tests to review. Run tests first.'; return; }
+    showProposal(await Teacher.diagnose(Store.get(), fails));
+  }));
+
+  function showProposal(p) {
+    proposal = p;
+    const rows = [
+      ...p.rules.map((r, i) => `<li><input type="checkbox" checked data-k="rules" data-i="${i}" aria-label="Include rule"><span><b>rule</b>${esc(r)}</span></li>`),
+      ...p.examples.map((e, i) => `<li><input type="checkbox" checked data-k="examples" data-i="${i}" aria-label="Include example"><span><b>example</b>${esc(e.input)} → ${esc(e.output)}</span></li>`),
+      ...p.tests.map((t, i) => `<li><input type="checkbox" checked data-k="tests" data-i="${i}" aria-label="Include test"><span><b>test</b>${esc(t.input)} → ${esc(t.expected)}</span></li>`),
+    ];
+    tEl('t-status').textContent = rows.length ? `✓ ${rows.length} suggestions ready. Review them below.` : 'The teacher returned nothing usable. Try again.';
+    tEl('t-notes').textContent = p.notes; tEl('t-notes').hidden = !p.notes;
+    tEl('t-list').innerHTML = rows.join(''); tEl('t-proposal').hidden = !rows.length;
+  }
+  tEl('t-apply').addEventListener('click', () => {
+    if (!proposal) return;
+    const sel = k => $$(`#t-list input[data-k=${k}]:checked`).map(i => proposal[k][+i.dataset.i]);
+    const exs = sel('examples').map(e => ({ ...e, src: 'teacher' })), rules = sel('rules'), tests = sel('tests');
+    const res = Trainer.commit(Store, exs, rules);
+    const cur = Store.get(), taught = new Set(cur.examples.map(e => e.input));
+    const newTests = tests.filter(t => !taught.has(t.input) && !cur.tests.some(x => x.input === t.input));
+    if (newTests.length) Store.set({ tests: [...cur.tests, ...newTests] });
+    if (!res && !newTests.length) return toast('Nothing new: you already have these.', true);
+    toast(`Teacher update applied${res ? ' (' + Store.versionString(res.version) + ': ' + res.note + ')' : ''}${newTests.length ? `, +${newTests.length} held-out tests` : ''}. Re-testing…`);
+    proposal = null; tEl('t-proposal').hidden = true; tEl('t-status').textContent = '';
+    scheduleRetest(700, 'Re-tested after teacher update');
   });
 
   /* ════════════════════ 4 · EXPORT ════════════════════ */
@@ -369,7 +453,7 @@
 
   function render() {
     const s = Store.get();
-    renderModels(); renderExpand();
+    renderModels(); renderExpand(); renderTeacher();
     $('#ver-chip').textContent = s.forged ? Store.versionString() : 'Not forged';
     if (!$('#tab-preview').hidden) renderPreviewHeader();
     if (!$('#tab-export').hidden) renderExport();

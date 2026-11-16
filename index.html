@@ -78,6 +78,7 @@
       <!-- ───────────── 2 · EXPAND ───────────── -->
       <section id="tab-expand" class="panel" role="tabpanel" hidden>
         <div class="grid two">
+         <div class="stack">
           <div class="glass card">
             <h2>Expand &amp; Fine-Tune Model</h2>
             <p class="sub">Teach your widget new behavior. Your data is genuinely used: as learned patterns in Simulated mode, and as few-shot context in Real mode.</p>
@@ -102,6 +103,35 @@
             <button class="btn primary big" id="patch-btn">Update &amp; Patch Model</button>
             <p class="hint" id="patch-lock" hidden>Forge a base widget first.</p>
           </div>
+
+          <!-- Optional AI Teacher: a stronger LLM that generates data, diagnoses failures and judges replies -->
+          <div class="glass card" id="teacher-card">
+            <h2>AI Teacher <em class="opt">optional</em></h2>
+            <p class="sub">Connect Claude or any OpenAI-compatible model to generate training data, diagnose failed tests and judge replies. Uses an API key, since Claude Code / Codex logins can't be used from a web page.</p>
+            <div class="seg" id="t-provider" role="radiogroup" aria-label="Teacher provider">
+              <button role="radio" data-prov="anthropic">Anthropic<small>Claude API</small></button>
+              <button role="radio" data-prov="openai">OpenAI-compatible<small>OpenAI · OpenRouter · Ollama</small></button>
+            </div>
+            <label class="field tgap"><span>API key</span><input type="password" id="t-key" autocomplete="off" placeholder="sk-…"></label>
+            <label class="field"><span>Model</span><input type="text" id="t-model" autocomplete="off"></label>
+            <label class="field" id="t-base-wrap"><span>Base URL</span><input type="text" id="t-base" autocomplete="off" placeholder="https://api.openai.com/v1"></label>
+            <label class="check"><input type="checkbox" id="t-remember"> Remember key on this device <em>(otherwise cleared when the tab closes)</em></label>
+            <p class="hint">Privacy: using the teacher sends your task, rules, examples and any input you ask about to the provider you chose. Don't use real customer data.</p>
+            <div class="row">
+              <button class="btn ghost" id="t-connect">Save &amp; test</button>
+              <button class="btn ghost" id="t-gen">Generate training data</button>
+              <button class="btn ghost" id="t-diag">Review failures</button>
+              <button class="btn ghost" id="t-forget">Forget key</button>
+            </div>
+            <p class="hint" id="t-status" aria-live="polite"></p>
+            <div id="t-proposal" hidden>
+              <h3>Teacher suggestions <em class="opt">untick anything you don't want</em></h3>
+              <p class="sub tnotes" id="t-notes"></p>
+              <ul class="list props" id="t-list"></ul>
+              <button class="btn primary big" id="t-apply">Add selected to model</button>
+            </div>
+          </div>
+         </div>
 
           <div class="stack">
             <div class="glass card">
@@ -210,6 +240,7 @@
   <script src="js/engine.js"></script>
   <script src="js/starter.js"></script>
   <script src="js/tester.js"></script>
+  <script src="js/teacher.js"></script>
   <script src="js/trainer.js"></script>
   <script src="js/exporter.js"></script>
   <script src="js/ui.js"></script>
