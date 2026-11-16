@@ -3,7 +3,7 @@
    Sections: helpers · stepper · tabs · build · expand · preview · export
    ========================================================================== */
 (() => {
-  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester } = PF;
+  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester, Monitor } = PF;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -236,7 +236,7 @@
 
   // Re-test automatically (debounced) after you delete an example or rule.
   let retestTimer;
-  const scheduleRetest = () => { clearTimeout(retestTimer); retestTimer = setTimeout(() => runTests('Re-tested after edit'), 700); };
+  const scheduleRetest = (ms = 700, why = 'Re-tested after edit') => { clearTimeout(retestTimer); retestTimer = setTimeout(() => runTests(why), ms); };
 
   function renderTests() {
     const s = Store.get(), t = s.lastTest;
@@ -303,9 +303,34 @@
       bot.textContent = '';
       for (let i = 0; i < text.length; i += 6) { bot.textContent = text.slice(0, i + 6); msgs.scrollTop = 1e9; await sleep(8); }   // streamed feel
       bot.insertAdjacentHTML('beforeend', `<span class="meta">${esc(runAs === 'base' ? 'untrained · ' : '')}${esc(meta)}</span>`);
+      // Issue detection + learn-from-use controls
+      const ctxEx = runAs === 'base' ? [] : s.examples;
+      const issues = Monitor.check(ctxEx, input, text);
+      if (issues.length) bot.insertAdjacentHTML('beforeend', '<div class="flags">' + issues.map(i => `<span class="flag ${i.level}">${i.level === 'info' ? 'ℹ' : '⚠'} ${esc(i.msg)}</span>`).join('') + '</div>');
+      if (runAs !== 'base') { bot._ctx = { input, text }; bot.insertAdjacentHTML('beforeend', '<div class="fb"><button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button></div>'); }
     } catch (err) {
       bot.textContent = 'Error: ' + (err.message || err);
     } finally { busy = false; $('#send-btn').disabled = false; msgs.scrollTop = 1e9; }
+  });
+
+  /* ── Learn from use: 👍 / ✏ add the (input → output) pair to the bundle and re-test ── */
+  function teach(bot, output) {
+    const res = Trainer.commit(Store, [{ input: bot._ctx.input, output, src: 'you' }], []);
+    if (!res) return toast('The widget already knows this exact example.', true);
+    toast(`Learned. Now ${Store.versionString(res.version)}. Re-testing shortly…`);
+    scheduleRetest(4000, 'Re-tested after learning');       // batch several lessons into one test run
+    bot.querySelector('.fb').innerHTML = '<button disabled>✓ Learned</button>';
+  }
+  msgs.addEventListener('click', e => {
+    const b = e.target.closest('[data-fb]'), bot = e.target.closest('.msg.bot'); if (!b || !bot || !bot._ctx) return;
+    if (b.dataset.fb === 'good') return teach(bot, bot._ctx.text);
+    if (b.dataset.fb === 'fix') {
+      const fb = bot.querySelector('.fb');
+      fb.innerHTML = '<textarea class="fixbox" aria-label="Correct output"></textarea><button data-fb="save">Save correction</button><button data-fb="cancel">Cancel</button>';
+      fb.querySelector('textarea').value = bot._ctx.text; fb.querySelector('textarea').focus();
+    }
+    if (b.dataset.fb === 'save') { const v = bot.querySelector('.fixbox').value.trim(); v ? teach(bot, v) : toast('Type the correct output first.', true); }
+    if (b.dataset.fb === 'cancel') bot.querySelector('.fb').innerHTML = '<button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button>';
   });
 
   /* ════════════════════ 4 · EXPORT ════════════════════ */

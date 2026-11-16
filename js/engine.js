@@ -209,21 +209,32 @@ PF.Engine = (() => {
   }
   const isRealLoaded = id => !!pipe && pipeKey === id;
 
-  async function generateReal(cfg, input, modelId) {
-    const t0 = performance.now();
-    const gen = () => pipe(buildMessages(cfg.task, cfg.rules, cfg.examples, input), { max_new_tokens: 160, do_sample: false });
+  /** One generation. If WebGPU kernels fail on this GPU/driver, switch to WASM once and retry. */
+  async function generate(modelId, msgs) {
+    const go = () => pipe(msgs, { max_new_tokens: 160, do_sample: false });
     let out;
-    try { out = await gen(); }
+    try { out = await go(); }
     catch (e) {
-      // WebGPU kernels can fail on some GPUs/drivers (e.g. "Can't perform binary op"). Fall back to WASM once and retry.
       if (!String(pipe.pfDevice).startsWith('webgpu')) throw e;
       console.warn('WebGPU generation failed, switching to WASM:', e);
       webgpuBroken = true; pipe = null;
       await loadReal(PF.Models.get(modelId), () => {}, { wasmOnly: true });
-      out = await gen();
+      out = await go();
     }
-    const text = out[0].generated_text.at(-1).content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-    return { text, meta: `${pipe.pfDevice} · ${cfg.examples.length} examples in context · ${Math.round(performance.now() - t0)} ms` };
+    return out[0].generated_text.at(-1).content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+  }
+
+  async function generateReal(cfg, input, modelId) {
+    const t0 = performance.now();
+    const msgs = buildMessages(cfg.task, cfg.rules, cfg.examples, input);
+    let text = await generate(modelId, msgs), repaired = '';
+    // Self-repair: if the reply is invalid JSON / misses keys, tell the model once and retry.
+    const bad = PF.Monitor.check(cfg.examples, input, text).find(i => i.repair);
+    if (bad) {
+      const retry = await generate(modelId, [...msgs, { role: 'assistant', content: text }, { role: 'user', content: bad.repair }]);
+      if (!PF.Monitor.check(cfg.examples, input, retry).some(i => i.repair)) { text = retry; repaired = ' · auto-repaired'; }
+    }
+    return { text, meta: `${pipe.pfDevice} · ${cfg.examples.length} examples in context · ${Math.round(performance.now() - t0)} ms${repaired}` };
   }
 
   // Marks <body> as busy while any generation is in flight (CSS pauses decorative animation).
