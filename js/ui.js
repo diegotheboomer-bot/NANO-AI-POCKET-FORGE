@@ -3,7 +3,7 @@
    Sections: helpers · stepper · tabs · build · expand · preview · export
    ========================================================================== */
 (() => {
-  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester, Monitor, Teacher } = PF;
+  const { Store, Models, Engine, Trainer, Exporter, Starter, Tester, Monitor } = PF;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -116,6 +116,7 @@
       $('#forge-log').textContent += '✓ widget v1.0.0 ready\n';
       toast(result && result.total ? `Forged. Self-test ${Math.round(result.score * 100)}%. Try it in Live Preview.` : 'Forged. Try it in Live Preview.');
       resetChat();
+      if ($('#auto-fix').checked && result && result.total) await autoImprove();   // fully automatic: forge → test → fix → re-test
     } catch (e) { toast('Forge failed: ' + (e.message || e), true); }
     finally { forging = false; $('#forge-btn').disabled = false; }
   });
@@ -214,7 +215,7 @@
   /* Auto-improve: test → teach every failed held-out case its correct answer → retest (max 3 rounds).
      Caveat: a case that was taught no longer measures generalisation, so the toast says how many were taught. */
   let improving = false;
-  $('#auto-btn').addEventListener('click', async () => {
+  async function autoImprove() {
     if (improving || testing || !Store.get().forged) return;
     improving = true; $('#auto-btn').disabled = true;
     let taught = 0;
@@ -230,9 +231,12 @@
         await runTests(`Round ${round}: taught ${items.length}`);
       }
       const t = Store.get().lastTest;
-      toast(taught ? `Auto-improve done: taught ${taught} failed case${taught > 1 ? 's' : ''}, score ${Math.round((t?.score || 0) * 100)}%. Taught cases are no longer held-out.` : 'Nothing to fix: no held-out failures.');
+      toast(taught ? `Auto-fix done: taught ${taught} failed case${taught > 1 ? 's' : ''}, score ${Math.round((t?.score || 0) * 100)}%. Taught cases are no longer held-out.` : 'Nothing to fix: no held-out failures.');
     } finally { improving = false; renderTests(); }
-  });
+  }
+  $('#auto-btn').addEventListener('click', autoImprove);
+  try { $('#auto-fix').checked = localStorage.getItem('pf.autofix') !== '0'; } catch { /* default on */ }
+  $('#auto-fix').addEventListener('change', e => { try { localStorage.setItem('pf.autofix', e.target.checked ? '1' : '0'); } catch { /* ignore */ } });
 
   // Re-test automatically (debounced) after you delete an example or rule.
   let retestTimer;
@@ -313,21 +317,12 @@
     } finally { busy = false; $('#send-btn').disabled = false; msgs.scrollTop = 1e9; }
   });
 
-  const fbButtons = () => '<button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button>' + (Teacher.ready() ? '<button data-fb="teacher">🎓 Ask teacher</button>' : '');
+  const fbButtons = () => '<button data-fb="good">👍 Good, learn this</button><button data-fb="fix">✏ Fix it</button>';
   function openFix(bot, value, note = '') {
     const fb = bot.querySelector('.fb');
     fb.innerHTML = '<textarea class="fixbox" aria-label="Correct output"></textarea><button data-fb="save">Save correction</button><button data-fb="cancel">Cancel</button>' + (note ? `<small>${esc(note)}</small>` : '');
     fb.querySelector('textarea').value = value; fb.querySelector('textarea').focus();
   }
-  async function askTeacherAbout(bot, btn) {
-    btn.disabled = true; btn.textContent = '🎓 Thinking…';
-    try {
-      const v = await Teacher.judge(Store.get(), bot._ctx.input, bot._ctx.text);
-      if (v.correct) { toast('Teacher: looks correct. ' + v.reason); btn.textContent = '🎓 Teacher agrees'; }
-      else openFix(bot, v.better, 'Teacher: ' + v.reason);            // prefill the correction, you decide whether to save it
-    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = '🎓 Ask teacher'; }
-  }
-
   /* ── Learn from use: 👍 / ✏ add the (input → output) pair to the bundle and re-test ── */
   function teach(bot, output) {
     const res = Trainer.commit(Store, [{ input: bot._ctx.input, output, src: 'you' }], []);
@@ -342,95 +337,6 @@
     if (b.dataset.fb === 'fix') openFix(bot, bot._ctx.text);
     if (b.dataset.fb === 'save') { const v = bot.querySelector('.fixbox').value.trim(); v ? teach(bot, v) : toast('Type the correct output first.', true); }
     if (b.dataset.fb === 'cancel') bot.querySelector('.fb').innerHTML = fbButtons();
-    if (b.dataset.fb === 'teacher') askTeacherAbout(bot, b);
-  });
-
-  /* ════════════════════ AI TEACHER (optional) ════════════════════ */
-  let proposal = null;
-  const tEl = id => document.getElementById(id);
-
-  function renderTeacher() {
-    const t = Teacher.get(), s = Store.get();
-    $$('#t-provider button').forEach(b => b.setAttribute('aria-checked', b.dataset.prov === t.provider));
-    $('#t-base-wrap').hidden = t.provider !== 'openai';
-    $('#t-model-wrap').hidden = t.provider === 'cli'; $('#t-cli-wrap').hidden = t.provider !== 'cli';
-    tEl('t-key-label').textContent = t.provider === 'cli' ? 'Bridge token' : 'API key';
-    if (document.activeElement !== tEl('t-bridge')) tEl('t-bridge').value = t.bridge;
-    tEl('t-tool').value = t.tool;
-    if (document.activeElement !== tEl('t-model')) tEl('t-model').value = t.model;
-    if (document.activeElement !== tEl('t-base')) tEl('t-base').value = t.base;
-    tEl('t-remember').checked = t.remember;
-    tEl('t-dest').textContent = t.provider === 'anthropic' ? 'Requests go to: api.anthropic.com' : t.provider === 'cli' ? `Requests go to: your local bridge (${t.bridge})` : `Requests go to: ${(t.base.match(/\/\/([^/]+)/) || [])[1] || t.base}`;
-    tEl('t-key').placeholder = t.hasKey ? '•••••••• (saved for this session)' : (t.provider === 'cli' ? 'token printed by the bridge' : t.provider === 'anthropic' ? 'sk-ant-…' : 'sk-… (optional for localhost)');
-    const ok = Teacher.ready();
-    tEl('t-gen').disabled = !ok || !s.forged; tEl('t-diag').disabled = !ok || !s.forged; tEl('t-forget').disabled = !t.hasKey;
-  }
-  $('#t-provider').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const anth = b.dataset.prov === 'anthropic';
-    Teacher.save(b.dataset.prov === 'cli' ? { provider: 'cli' } : { provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
-  });
-  // One-click presets for OpenAI-compatible providers (model names change over time: edit if you get "model not found")
-  const TEACHER_PRESETS = {
-    gemini: { base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
-    openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-    openrouter: { base: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
-    ollama: { base: 'http://localhost:11434/v1', model: 'llama3.2' },
-  };
-  $('#t-presets').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    Teacher.save({ provider: 'openai', ...TEACHER_PRESETS[b.dataset.preset] }); renderTeacher();
-  });
-  function saveTeacherForm() {
-    Teacher.save({ tool: tEl('t-tool').value, bridge: tEl('t-bridge').value.trim() || 'http://127.0.0.1:8787', model: tEl('t-model').value.trim() || Teacher.get().model, base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
-      tEl('t-key').value.trim() ? tEl('t-key').value : undefined);
-    tEl('t-key').value = '';
-  }
-  async function withTeacher(label, fn) {
-    saveTeacherForm(); renderTeacher();
-    const status = tEl('t-status'); status.textContent = label + '…';
-    ['t-connect', 't-gen', 't-diag'].forEach(id => tEl(id).disabled = true);
-    try { await fn(); } catch (e) { status.textContent = '✗ ' + e.message; toast(e.message, true); }
-    finally { renderTeacher(); tEl('t-connect').disabled = false; }
-  }
-  tEl('t-connect').addEventListener('click', () => withTeacher('Testing connection', async () => {
-    await Teacher.call('Reply with one JSON object only.', 'Return {"ok":true}');
-    tEl('t-status').textContent = '✓ Connected. The teacher can now generate data, review failures and judge replies.';
-  }));
-  tEl('t-forget').addEventListener('click', () => { Teacher.forget(); tEl('t-status').textContent = 'Key removed.'; renderTeacher(); });
-
-  tEl('t-gen').addEventListener('click', () => withTeacher('Teacher is writing training data', async () => {
-    showProposal(await Teacher.generate(Store.get()));
-  }));
-  tEl('t-diag').addEventListener('click', () => withTeacher('Teacher is reviewing failures', async () => {
-    const fails = (Store.get().lastTest?.cases || []).filter(c => !c.pass);
-    if (!fails.length) { tEl('t-status').textContent = 'No failing tests to review. Run tests first.'; return; }
-    showProposal(await Teacher.diagnose(Store.get(), fails));
-  }));
-
-  function showProposal(p) {
-    proposal = p;
-    const rows = [
-      ...p.rules.map((r, i) => `<li><input type="checkbox" checked data-k="rules" data-i="${i}" aria-label="Include rule"><span><b>rule</b>${esc(r)}</span></li>`),
-      ...p.examples.map((e, i) => `<li><input type="checkbox" checked data-k="examples" data-i="${i}" aria-label="Include example"><span><b>example</b>${esc(e.input)} → ${esc(e.output)}</span></li>`),
-      ...p.tests.map((t, i) => `<li><input type="checkbox" checked data-k="tests" data-i="${i}" aria-label="Include test"><span><b>test</b>${esc(t.input)} → ${esc(t.expected)}</span></li>`),
-    ];
-    tEl('t-status').textContent = rows.length ? `✓ ${rows.length} suggestions ready. Review them below.` : 'The teacher returned nothing usable. Try again.';
-    tEl('t-notes').textContent = p.notes; tEl('t-notes').hidden = !p.notes;
-    tEl('t-list').innerHTML = rows.join(''); tEl('t-proposal').hidden = !rows.length;
-  }
-  tEl('t-apply').addEventListener('click', () => {
-    if (!proposal) return;
-    const sel = k => $$(`#t-list input[data-k=${k}]:checked`).map(i => proposal[k][+i.dataset.i]);
-    const exs = sel('examples').map(e => ({ ...e, src: 'teacher' })), rules = sel('rules'), tests = sel('tests');
-    const res = Trainer.commit(Store, exs, rules);
-    const cur = Store.get(), taught = new Set(cur.examples.map(e => e.input));
-    const newTests = tests.filter(t => !taught.has(t.input) && !cur.tests.some(x => x.input === t.input));
-    if (newTests.length) Store.set({ tests: [...cur.tests, ...newTests] });
-    if (!res && !newTests.length) return toast('Nothing new: you already have these.', true);
-    toast(`Teacher update applied${res ? ' (' + Store.versionString(res.version) + ': ' + res.note + ')' : ''}${newTests.length ? `, +${newTests.length} held-out tests` : ''}. Re-testing…`);
-    proposal = null; tEl('t-proposal').hidden = true; tEl('t-status').textContent = '';
-    scheduleRetest(700, 'Re-tested after teacher update');
   });
 
   /* ════════════════════ 4 · EXPORT ════════════════════ */
@@ -469,7 +375,7 @@
 
   function render() {
     const s = Store.get();
-    renderModels(); renderExpand(); renderTeacher();
+    renderModels(); renderExpand();
     $('#ver-chip').textContent = s.forged ? Store.versionString() : 'Not forged';
     if (!$('#tab-preview').hidden) renderPreviewHeader();
     if (!$('#tab-export').hidden) renderExport();
