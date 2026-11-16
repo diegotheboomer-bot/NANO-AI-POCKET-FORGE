@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PocketForge widget</title>
+<style>body{font:16px system-ui;max-width:640px;margin:40px auto;padding:0 16px;background:#0b0d1f;color:#eef}textarea,button{font:inherit;padding:10px;border-radius:10px;border:1px solid #445;background:#161a3a;color:inherit}button{margin-top:8px;cursor:pointer}</style>
+</head><body>
+<!-- PocketForge widget · v1.3.0 · runs 100% in the visitor's browser -->
+<div id="pocketforge"></div>
+<script type="module">
+// ── 1. Config (your task + everything you taught it) ──
+const CONFIG = {
+  "version": "1.3.0",
+  "task": "A friendly math tutor chatbot for simple trigonometry. Answer questions about sin, cos and tan of common angles and about right-triangle ratios. Give the formula or value first, then the result, in 1 to 3 short lines.",
+  "model": "onnx-community/Qwen3-4B-ONNX",
+  "noThink": true,
+  "rules": [],
+  "examples": [
+    {
+      "input": "cosine meaning?",
+      "output": "The cosine of an angle in a right triangle is the ratio of the adjacent side to the hypotenuse. It is also the x-coordinate of the unit circle at that angle. cos(θ) = adjacent/hypotenuse.",
+      "src": "you"
+    },
+    {
+      "input": "show me in bullet points",
+      "output": "- Sin: Opposite / Hypotenuse  \n- Cos: Adjacent / Hypotenuse  \n- Tan: Opposite / Adjacent",
+      "src": "you"
+    },
+    {
+      "input": "what are the diffrent types of triangles",
+      "output": "There are several types of triangles based on their angles and sides. The main types are: equilateral (all sides and angles equal), isosceles (two sides and angles equal), scalene (no sides or angles equal), right-angled (one angle is 90 degrees), acute-angled (all angles less than 90 degrees), and obtuse-angled (one angle greater than 90 degrees).",
+      "src": "you"
+    }
+  ]
+};
+
+// ── 2. Prompt builder (identical to the live preview) ──
+function buildMessages(task, rules, examples, input) {
+    const sys = ['You are a focused micro-assistant embedded in a web page.',
+      'Task: ' + (task || 'Answer the user.')]
+      .concat(rules.length ? ['Rules:'].concat(rules.map(r => '- ' + r)) : [])
+      .concat(['Every user message is the input for the task above. Do what the task says; never ask for logins, credentials or personal information.',
+        'Reply with the result only, no preamble. Match the format of any examples exactly; use plain text unless the task, rules or examples call for JSON.']).join('\n');
+    // Small models obey the USER turn far more than the system turn, so every turn restates the task
+    // and wraps the text as quoted data. Examples use the exact same wrapper as the live input.
+    const wrap = t => 'Task: ' + (task || 'Answer the user.') + '\nApply the task to the text below. Output only the result.\nText:\n\"\"\"\n' + t + '\n\"\"\"\nResult:';
+    const msgs = [{ role: 'system', content: sys }];
+    // Last 8 examples keep the context short enough for a ~0.5B model.
+    examples.slice(-8).forEach(e => msgs.push({ role: 'user', content: wrap(e.input) }, { role: 'assistant', content: e.output }));
+    msgs.push({ role: 'user', content: wrap(input) });
+    return msgs;
+  }
+
+// ── 3. Fallback router: WebGPU → WASM → rule-based ──
+async function pickRoutes() {
+  const routes = [];
+  try {
+    if (navigator.gpu && await navigator.gpu.requestAdapter()) routes.push({ device: 'webgpu', dtype: 'q4f16' }, { device: 'webgpu', dtype: 'q4' });
+  } catch (e) { /* no WebGPU */ }
+  if (typeof WebAssembly === 'object') routes.push({ device: 'wasm', dtype: 'q8' }, { device: 'wasm', dtype: 'q4' });
+  return routes;                       // empty → rule fallback
+}
+
+let generator = null;
+async function loadModel(onStatus) {
+  const routes = await pickRoutes();
+  if (!routes.length) return null;
+  let pipeline;
+  try { ({ pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2')); }
+  catch (e) { console.warn('PocketForge: could not load Transformers.js', e); return null; }   // offline/blocked → rule fallback
+  // To self-host weights: import { env } and set env.allowRemoteModels = false; env.localModelPath = '/models/';
+  for (const route of routes) {
+    try {
+      const files = {};
+      return await pipeline('text-generation', CONFIG.model, Object.assign({}, route, {
+        progress_callback: p => {
+          if (p.status !== 'progress' || !p.total) return;
+          files[p.file] = p; const f = Object.values(files);
+          onStatus('Downloading model… ' + Math.round(100 * f.reduce((a, x) => a + x.loaded, 0) / f.reduce((a, x) => a + x.total, 0)) + '%');
+        }
+      }));
+    } catch (e) { console.warn('PocketForge route failed:', route, e); }
+  }
+  return null;
+}
+
+// Last-resort fallback: reply with the closest taught example (no model needed).
+function nearest(input) {
+  const tok = s => new Set(String(s).toLowerCase().match(/[a-z0-9]+/g) || []);
+  const a = tok(input); let best = null, top = 0;
+  CONFIG.examples.forEach(e => {
+    const b = tok(e.input); let i = 0; a.forEach(t => b.has(t) && i++);
+    const score = i / (a.size + b.size - i || 1);
+    if (score > top) { top = score; best = e; }
+  });
+  return best ? best.output : '(No on-device model available in this browser.)';
+}
+
+async function run(input, onStatus) {
+  if (generator === null) generator = (await loadModel(onStatus)) || false;
+  if (!generator) return nearest(input);
+  const msgs = buildMessages(CONFIG.task, CONFIG.rules, CONFIG.examples, input);
+  if (CONFIG.noThink) msgs[msgs.length - 1].content += ' /no_think';   // Qwen3: skip the reasoning phase
+  const out = await generator(msgs, { max_new_tokens: 160, do_sample: false });
+  let text = out[0].generated_text.at(-1).content;
+  const end = text.lastIndexOf('</think>');             // Qwen3: drop the reasoning block (string ops, no regex)
+  if (end >= 0) text = text.slice(end + 8);
+  if (text.indexOf('<think>') >= 0) text = text.slice(0, text.indexOf('<think>'));
+  return text.trim();
+}
+
+// ── 4. Minimal UI (style freely) ──
+const root = document.getElementById('pocketforge');
+root.innerHTML = '<textarea rows="4" style="width:100%" placeholder="Paste input…"></textarea>' +
+  '<button>Run</button> <small></small><pre style="white-space:pre-wrap"></pre>';
+const [box, btn, note, out] = ['textarea', 'button', 'small', 'pre'].map(t => root.querySelector(t));
+btn.onclick = async () => {
+  btn.disabled = true; out.textContent = '';
+  try { out.textContent = await run(box.value, t => (note.textContent = t)); note.textContent = ''; }
+  catch (e) { out.textContent = 'Error: ' + (e.message || e); }
+  finally { btn.disabled = false; }
+};
+</script>
+</body></html>

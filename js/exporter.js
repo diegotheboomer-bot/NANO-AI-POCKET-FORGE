@@ -59,7 +59,9 @@ let generator = null;
 async function loadModel(onStatus) {
   const routes = await pickRoutes();
   if (!routes.length) return null;
-  const { pipeline } = await import('${PF.Models.TF_URL}');
+  let pipeline;
+  try { ({ pipeline } = await import('${PF.Models.TF_URL}')); }
+  catch (e) { console.warn('PocketForge: could not load Transformers.js', e); return null; }   // offline/blocked → rule fallback
   // To self-host weights: import { env } and set env.allowRemoteModels = false; env.localModelPath = '/models/';
   for (const route of routes) {
     try {
@@ -109,6 +111,7 @@ const [box, btn, note, out] = ['textarea', 'button', 'small', 'pre'].map(t => ro
 btn.onclick = async () => {
   btn.disabled = true; out.textContent = '';
   try { out.textContent = await run(box.value, t => (note.textContent = t)); note.textContent = ''; }
+  catch (e) { out.textContent = 'Error: ' + (e.message || e); }
   finally { btn.disabled = false; }
 };`);
     L.push('</script>');
