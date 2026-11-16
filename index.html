@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PocketForge</title>
+  <meta name="description" content="Forge tiny in-browser AI widgets. No server, no API keys.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Ambient liquid background (pure CSS, sits behind every glass panel) -->
+  <div class="ambient" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+  <div class="shell">
+    <!-- ───────────── Header ───────────── -->
+    <header class="topbar glass">
+      <div class="brand">
+        <span class="orb" aria-hidden="true"></span>
+        <div>
+          <h1>PocketForge</h1>
+          <p>Zero-server AI widgets</p>
+        </div>
+      </div>
+
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button role="tab" data-tab="build"   aria-selected="true">Build</button>
+        <button role="tab" data-tab="expand"  aria-selected="false">Expand &amp; Fine-Tune</button>
+        <button role="tab" data-tab="preview" aria-selected="false">Live Preview</button>
+        <button role="tab" data-tab="export"  aria-selected="false">Export</button>
+      </nav>
+
+      <div class="status">
+        <span class="chip" id="hw-chip" title="Detected inference hardware">Detecting…</span>
+        <span class="chip chip-ver" id="ver-chip">Not forged</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- ───────────── 1 · BUILD ───────────── -->
+      <section id="tab-build" class="panel" role="tabpanel">
+        <div class="grid two">
+          <div class="glass card">
+            <h2>Describe your micro-AI</h2>
+            <p class="sub">One sentence is enough. PocketForge wires it to a small on-device model.</p>
+
+            <label class="field">
+              <span>Task</span>
+              <textarea id="task" rows="3" placeholder="e.g. Extract product info from messy text"></textarea>
+            </label>
+            <div class="chips" id="task-presets"></div>
+
+            <div class="field">
+              <span>Base model</span>
+              <div class="model-list" id="model-list"></div>
+            </div>
+
+            <div class="field">
+              <span>Inference backend</span>
+              <div class="seg" id="backend-seg" role="radiogroup" aria-label="Inference backend">
+                <button role="radio" data-backend="sim">Simulated<small>Instant · offline</small></button>
+                <button role="radio" data-backend="real">Real<small>Transformers.js · downloads model</small></button>
+              </div>
+            </div>
+
+            <button class="btn primary big" id="forge-btn">Forge Base Widget</button>
+          </div>
+
+          <div class="glass card">
+            <h2>Forge progress</h2>
+            <p class="sub" id="forge-sub">Ready when you are.</p>
+            <ol class="steps" id="forge-steps"></ol>
+            <div class="bar" aria-hidden="true"><i id="forge-bar"></i></div>
+            <pre class="log" id="forge-log" aria-live="polite"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────── 2 · EXPAND ───────────── -->
+      <section id="tab-expand" class="panel" role="tabpanel" hidden>
+        <div class="grid two">
+          <div class="glass card">
+            <h2>Expand &amp; Fine-Tune Model</h2>
+            <p class="sub">Teach your widget new behavior. Your data is genuinely used: as learned patterns in Simulated mode, and as few-shot context in Real mode.</p>
+
+            <label class="field">
+              <span>Training examples <em>one per line: <code>input =&gt; output</code>, or paste a JSON array</em></span>
+              <textarea id="ex-text" rows="6" placeholder="Order #4821 broke on arrival, please refund =&gt; {&quot;priority&quot;:&quot;high&quot;,&quot;category&quot;:&quot;billing&quot;}"></textarea>
+            </label>
+
+            <div class="row">
+              <label class="btn ghost" for="ex-file">Upload JSON / CSV</label>
+              <input id="ex-file" type="file" accept=".json,.csv,.txt" hidden>
+              <button class="btn ghost" id="ex-sample">Insert sample</button>
+            </div>
+
+            <label class="field">
+              <span>Behavior rules <em>one per line</em></span>
+              <textarea id="rules-text" rows="3" placeholder="Always include a confidence score&#10;Redact phone numbers"></textarea>
+            </label>
+            <p class="hint">Simulated mode understands: <em>bullet/list</em>, <em>uppercase</em>, <em>compact</em>, <em>redact</em>, <em>confidence</em>. Real mode reads any plain-English rule.</p>
+
+            <button class="btn primary big" id="patch-btn">Update &amp; Patch Model</button>
+            <p class="hint" id="patch-lock" hidden>Forge a base widget first.</p>
+          </div>
+
+          <div class="stack">
+            <div class="glass card">
+              <h2>Patch progress</h2>
+              <ol class="steps" id="patch-steps"></ol>
+              <div class="loss">
+                <div class="loss-head"><span>Adapter loss</span><em>simulated</em></div>
+                <svg viewBox="0 0 300 70" preserveAspectRatio="none" aria-hidden="true">
+                  <defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#4fd1ff"/></linearGradient></defs>
+                  <polyline id="loss-line" fill="none" stroke="url(#lg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="glass card">
+              <h2>Bundle knowledge</h2>
+              <div class="counts"><div><b id="n-ex">0</b><span>examples</span></div><div><b id="n-rules">0</b><span>rules</span></div><div><b id="n-ver">—</b><span>version</span></div></div>
+              <ul class="list" id="knowledge-list"></ul>
+              <h3>Version history</h3>
+              <ul class="list history" id="history-list"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────── 3 · PREVIEW ───────────── -->
+      <section id="tab-preview" class="panel" role="tabpanel" hidden>
+        <div class="glass chat">
+          <div class="chat-head">
+            <div>
+              <h2>Live preview</h2>
+              <p class="sub" id="chat-sub">Forge a widget to start testing.</p>
+            </div>
+            <div class="seg small" id="run-as" role="radiogroup" aria-label="Model version to run">
+              <button role="radio" data-as="current" aria-checked="true">Current</button>
+              <button role="radio" data-as="base" aria-checked="false">Base (v1.0.0)</button>
+            </div>
+          </div>
+          <div class="msgs" id="msgs" aria-live="polite"></div>
+          <div class="chips" id="sample-inputs"></div>
+          <form class="composer" id="composer">
+            <textarea id="chat-input" rows="2" placeholder="Paste some input…"></textarea>
+            <button class="btn primary" id="send-btn" type="submit">Run</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ───────────── 4 · EXPORT ───────────── -->
+      <section id="tab-export" class="panel" role="tabpanel" hidden>
+        <div class="grid two wide-left">
+          <div class="glass card">
+            <div class="card-head">
+              <div><h2>Embed snippet</h2><p class="sub">Paste into any HTML page. Self-contained, no build step.</p></div>
+              <button class="btn ghost" id="copy-btn">Copy</button>
+            </div>
+            <pre class="code"><code id="snippet">Forge a widget to generate your snippet.</code></pre>
+          </div>
+
+          <div class="stack">
+            <div class="glass card">
+              <h2>Fallback router</h2>
+              <p class="sub">Picked at runtime, in this order.</p>
+              <ol class="route">
+                <li><b>WebGPU</b><span>q4 weights · fastest</span></li>
+                <li><b>WASM (CPU)</b><span>q8 weights · works everywhere modern</span></li>
+                <li><b>Rule fallback</b><span>nearest-example match · no model</span></li>
+              </ol>
+            </div>
+            <div class="glass card">
+              <h2>Download assets</h2>
+              <div class="dl">
+                <button class="btn ghost" data-dl="manifest">Bundle manifest <small>.json</small></button>
+                <button class="btn ghost" data-dl="adapter">Adapter shard <small>.json</small></button>
+                <button class="btn ghost" data-dl="widget">Standalone widget <small>.html</small></button>
+              </div>
+              <h3>Base model (.onnx)</h3>
+              <p class="hint" id="onnx-note">The ONNX weights are hundreds of MB and live on Hugging Face, so this demo links them instead of faking a file.</p>
+              <pre class="code small"><code id="onnx-cmd"></code></pre>
+              <a class="link" id="onnx-link" target="_blank" rel="noopener">Browse model files ↗</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">Everything runs in your browser tab. State is saved to localStorage.
+      <button class="linkbtn" id="reset-btn">Reset demo</button></footer>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- Classic scripts (not ES modules) so the page also works when opened via file:// -->
+  <script src="js/store.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/trainer.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
