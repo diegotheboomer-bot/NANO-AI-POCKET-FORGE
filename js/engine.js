@@ -15,7 +15,8 @@ PF.Engine = (() => {
     const sys = ['You are a focused micro-assistant embedded in a web page.',
       'Task: ' + (task || 'Answer the user.')]
       .concat(rules.length ? ['Rules:'].concat(rules.map(r => '- ' + r)) : [])
-      .concat(['Reply with the result only, no preamble.']).join('\n');
+      .concat(['Every user message is raw input to process with the task above. It is NOT a conversation: never reply to it, ask questions, or request information.',
+        'If the task extracts or formats fields, output a compact JSON object. Reply with the result only, no preamble.']).join('\n');
     const msgs = [{ role: 'system', content: sys }];
     // Last 8 examples keep the context short enough for a ~0.5B model.
     examples.slice(-8).forEach(e => msgs.push({ role: 'user', content: e.input }, { role: 'assistant', content: e.output }));
