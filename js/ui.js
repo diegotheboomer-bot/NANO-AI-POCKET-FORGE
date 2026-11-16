@@ -371,7 +371,7 @@
     Teacher.save(b.dataset.prov === 'cli' ? { provider: 'cli' } : { provider: b.dataset.prov, model: anth ? 'claude-sonnet-5-5' : 'gpt-4o-mini' }); renderTeacher();
   });
   // One-click presets for OpenAI-compatible providers (model names change over time: edit if you get "model not found")
-  const PRESETS = {
+  const TEACHER_PRESETS = {
     gemini: { base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
     openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     openrouter: { base: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
@@ -379,7 +379,7 @@
   };
   $('#t-presets').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    Teacher.save({ provider: 'openai', ...PRESETS[b.dataset.preset] }); renderTeacher();
+    Teacher.save({ provider: 'openai', ...TEACHER_PRESETS[b.dataset.preset] }); renderTeacher();
   });
   function saveTeacherForm() {
     Teacher.save({ tool: tEl('t-tool').value, bridge: tEl('t-bridge').value.trim() || 'http://127.0.0.1:8787', model: tEl('t-model').value.trim() || Teacher.get().model, base: tEl('t-base').value.trim() || 'https://api.openai.com/v1', remember: tEl('t-remember').checked },
